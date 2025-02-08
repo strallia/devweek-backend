@@ -35,7 +35,7 @@ Make sure you have the following installed:
 1. Install dependencies:
 
     ```bash
-    pip install flask
+    pip install -r requirements.txt
     ```
 
 1. Run the Flask application:
