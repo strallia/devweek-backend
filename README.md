@@ -38,6 +38,17 @@ Make sure you have the following installed:
     pip install -r requirements.txt
     ```
 
+1. Create .env file in root directory:
+
+    Replace variables with < > with your info
+
+    ```
+    FLASK_APP=app.py
+    FlASK_ENV=development
+    SECRET_KEY=your_secret_key_here
+    SQLALCHEMY_DATABASE_URI=postgresql://<USERNAME>:<PASSWORD>@localhost:5432/<DB_NAME>
+    ```
+
 1. Run the Flask application:
 
     ```bash
