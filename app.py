@@ -198,7 +198,8 @@ def get_group(group_id):
     """Retrieve a group by ID"""
     group = Group.query.get(group_id)
     if group:
-        return jsonify({"id": group.id, "group_name": group.group_name, "description": group.description})
+        group_dict = {key: value for key, value in group.__dict__.items() if not key.startswith('_')}
+        return jsonify(group_dict)
     return jsonify({"error": "Group not found"}), 404
 
 @app.route('/groups/<int:group_id>/add_users', methods=['POST'])
@@ -296,7 +297,16 @@ def get_event(event_id):
     """Retrieve an event by ID"""
     event = Event.query.get(event_id)
     if event:
-        return jsonify({"id": event.id, "description": event.description, "event_type": event.event_type})
+        event_dict = {key: value for key, value in event.__dict__.items() if not key.startswith('_')}
+
+        # add group_name field
+        join_result = db.session.query(Event, Group.group_name)\
+                                .join(Group, Event.group_id == Group.id)\
+                                .filter(Event.id == event_id)\
+                                .first()
+        event_dict["group_name"] = join_result[1]
+
+        return jsonify(event_dict)
     return jsonify({"error": "Event not found"}), 404
 
 @app.route('/groups/<int:group_id>/events', methods=['GET'])
