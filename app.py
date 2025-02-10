@@ -398,6 +398,55 @@ def delete_event(event_id):
 
     return jsonify({"message": f"Event {event_id} deleted successfully!"}), 200
 
+# Route to invite a user to an event
+@app.route('/events/<int:event_id>/invite', methods=['POST'])
+def invite_user_to_event(event_id):
+    """ To add a user to the group tied to the event"""
+    data = request.get_json()
+    user_id = data.get('user_id')
+    
+    user = User.query.get(user_id)
+    event = Event.query.get(event_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    elif not event:
+        return jsonify({"error": "Event not found"}), 404
+    
+    # Get the group tied to the event
+    group = event.group
+    
+    if user in group.users:
+        return jsonify({"message": f"User {user.username} is already in the event"})
+    
+    group.users.append(user)
+    db.session.commit()
+    return jsonify({"message": f"User {user.username} invited successfully to event {event.event_name}"})
+
+
+# Route to get all events a user has joined
+@app.route('/users/<int:user_id>/events', methods=['GET'])
+def get_user_events(user_id):
+    """Get all the groups tied to events where a user is"""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    events = []
+    for group in user.groups:
+        if group.events:
+            for event in group.events:
+                events.append({
+                    "id": event.id,
+                    "event_name": event.event_name,
+                    "description": event.description,
+                    "date": event.date.strftime('%Y-%m-%d %H:%M:%S'),
+                    "location": event.location
+                })
+    
+    return jsonify({"events": events})
+
 ######################################################################################
 # EXPENSES ROUTES
 
