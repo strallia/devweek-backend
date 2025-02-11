@@ -541,7 +541,8 @@ def create_expense_split(expense_id):
             split = ExpenseSplit(
                 expense_id=expense.id,
                 user_id=user_id,
-                amount=amount_owed,
+                amount_owed=amount_owed,
+                amount_paid = 0,
                 algorithm_used=algorithm
             )
             db.session.add(split)
@@ -558,7 +559,8 @@ def create_expense_split(expense_id):
             split = ExpenseSplit(
                 expense_id=expense.id,
                 user_id=user_id,
-                amount=amount,
+                amount_owed=amount,
+                amount_paid = 0,
                 algorithm_used=algorithm
             )
             db.session.add(split)
