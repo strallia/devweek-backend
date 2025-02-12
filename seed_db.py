@@ -1,4 +1,4 @@
-from app import app, db, User, Group, Event, Expense, ExpenseSplit, Notification, DiscussionThread, Message
+from app import app, db, User, Group, Event, Expense, ExpenseSplit, Notification, DiscussionThread, Message, user_group
 
 with app.app_context():
     print("Seeding database...")
@@ -198,5 +198,23 @@ with app.app_context():
     ]
     db.session.add_all(expense_splits)
 
+    # Commit Users and Group tables to make sure they exist in the database
     db.session.commit()
+
+    # Seed user_group many to many relationship table
+    insert_data = [
+        {'user_id': 3, 'group_id': 1}, 
+        {'user_id': 4, 'group_id': 1}, 
+        {'user_id': 5, 'group_id': 1},
+        {'user_id': 6, 'group_id': 1},
+        {'user_id': 7, 'group_id': 2},
+        {'user_id': 6, 'group_id': 2},
+        {'user_id': 5, 'group_id': 2},
+    ]
+    for row in insert_data:
+        db.session.execute(user_group.insert().values(row))
+
+    # Commit the user-group relationship insertion
+    db.session.commit()
+
     print("Database seeding complete")

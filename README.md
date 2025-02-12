@@ -70,3 +70,14 @@ Make sure you have the following installed:
 
     Access the app at http://127.0.0.1:5000
 
+## Re-seeding the DB
+
+1. To re-seed the database, remove all tables from the database by running this command in psql CLI
+    ```
+    drop table discussion_thread , "event", "expense", "expense_split", "group", "message", "notification", "user", "user_group" cascade;
+    ```
+1. In separate terminal, run these commands one by one to create the tables and re-seed the database
+    ```bash
+    python create_db_tables.py
+    python seed_db.py
+    ```
