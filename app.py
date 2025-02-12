@@ -9,6 +9,7 @@ from flask_cors import CORS
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from sqlalchemy.orm import joinedload
 
 load_dotenv()
 
@@ -347,6 +348,24 @@ def get_group_members(group_id):
     ]
 
     return jsonify({"group_id": group.id, "group_name": group.group_name, "members": members}), 200
+
+@app.route('/users/<int:user_id>/groups', methods=['GET'])
+def get_user_groups(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    groups = []
+    for group in user.groups:
+        group = Group.query.options(joinedload(Group.users)).get(group.id)
+        group_data = {
+            key: value for key, value in vars(group).items() if not key.startswith('_')
+        }
+        group_data['users'] = [{'id': user.id, 'username': user.username, 'email': user.email} for user in group.users]
+        groups.append(group_data)
+    
+    return jsonify({"groups": groups})
+
 
 ######################################################################################
 # EVENTS ROUTES
