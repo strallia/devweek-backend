@@ -3,9 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta,  timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 load_dotenv()
 
@@ -19,6 +20,11 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default_secret_key')
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
+# JWT Setup
+app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "supersecretkey")
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)  # Token expires in 24 hours
+jwt = JWTManager(app)
 
 ##########################################################################
 # MODELS
@@ -152,6 +158,39 @@ class Message(db.Model):
 # ROUTES
 ##########################################################################
 
+######################################################################################
+# AUTHENTICATION ROUTES
+
+@app.route('/login', methods=['POST'])
+def login():
+    """Authenticate user"""
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+    
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({'error': 'No user found'}), 401
+    if user and not user.check_password(password):
+        return jsonify({'error': 'Incorrect password'}), 401
+    
+    access_token = create_access_token(identity=user.id)
+
+    return jsonify({
+        'message': 'Login successful', 
+        'token': access_token,
+        'user': {
+            'id':user.id, 
+            'email': user.email, 
+            'username': user.username
+        }
+    }), 200
+
+######################################################################################
 # USER ROUTES
 @app.route('/users', methods=['POST'])
 def create_user():
@@ -163,7 +202,6 @@ def create_user():
     db.session.commit()
     return jsonify({"message": f"User {data['username']} created successfully!"}), 201
 
-@app.route('/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     """Retrieve a user by ID"""
     user = User.query.get(user_id)
