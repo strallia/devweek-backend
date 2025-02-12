@@ -6,6 +6,7 @@ Make sure you have the following installed:
 
 - Python (3.9.6 or later)
 - pip (Python package manager)
+- psql CLI
 
 ## Getting Started
 
@@ -38,15 +39,27 @@ Make sure you have the following installed:
     pip install -r requirements.txt
     ```
 
-1. Create .env file in root directory:
+### Setting Up and Seeding the Database
 
-    Replace variables with < > with your info
+1. Activate psql CLI
+1. Create a new database
+    ```bash
+    CREATE DATABASE devweek;
+    ```
+1. Create .env file in root directory with flask variables and database URI
+
+    Replace variables with < > with your info.
 
     ```
     FLASK_APP=app.py
     FlASK_ENV=development
     SECRET_KEY=your_secret_key_here
-    SQLALCHEMY_DATABASE_URI=postgresql://<USERNAME>:<PASSWORD>@localhost:5432/<DB_NAME>
+    SQLALCHEMY_DATABASE_URI=postgresql://<USERNAME>:<PASSWORD>@localhost:5432/devweek
+    ```
+1. In separate terminal, run these commands one by one to create the tables and seed the database
+    ```bash
+    python create_db_tables.py
+    python seed_db.py
     ```
 
 1. Run the Flask application:
