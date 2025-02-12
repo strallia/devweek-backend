@@ -202,6 +202,7 @@ def create_user():
     db.session.commit()
     return jsonify({"message": f"User {data['username']} created successfully!"}), 201
 
+@app.route('/users/<int:user_id>', methods=['GET'])
 def get_user(user_id):
     """Retrieve a user by ID"""
     user = User.query.get(user_id)
