@@ -416,7 +416,10 @@ def create_event_for_group(group_id):
 @app.route('/events/<int:event_id>', methods=['GET'])
 def get_event(event_id):
     """Retrieve an event by ID"""
-    event = Event.query.get(event_id)
+    event = db.session.query(Event).options(
+        joinedload(Event.users) 
+    ).filter(Event.id == event_id).first()
+
     if event:
         event_dict = {key: value for key, value in event.__dict__.items() if not key.startswith('_')}
 
@@ -426,6 +429,9 @@ def get_event(event_id):
                                 .filter(Event.id == event_id)\
                                 .first()
         event_dict["group_name"] = join_result[1]
+
+        # add users field
+        event_dict["users"] = [{"id": u.id, "username": u.username, "email": u.email} for u in event.users]
 
         return jsonify(event_dict)
     return jsonify({"error": "Event not found"}), 404
