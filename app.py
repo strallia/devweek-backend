@@ -41,6 +41,13 @@ user_group = db.Table(
     db.Column('group_id', db.Integer, db.ForeignKey('group.id'), primary_key=True)
 )
 
+# Association table for many-to-many relationship
+user_event = db.Table(
+    'user_events',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('event_id', db.Integer, db.ForeignKey('event.id'), primary_key=True)
+)
+
 # User Model
 class User(db.Model):
     def __repr__(self):
@@ -57,6 +64,7 @@ class User(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
     groups = db.relationship('Group', secondary=user_group, back_populates='users')
+    events = db.relationship('Event', secondary=user_event, back_populates='users')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -104,6 +112,7 @@ class Event(db.Model):
     # One-to-Many Relationship with Expense
     expenses = db.relationship('Expense', back_populates='event', cascade="all, delete-orphan")
 
+    users = db.relationship('User', secondary=user_event, back_populates='events')
 
 # Expense Model
 class Expense(db.Model):
@@ -533,22 +542,23 @@ def invite_user_to_event(event_id):
 # Route to get all events a user has joined
 @app.route('/users/<int:user_id>/events', methods=['GET'])
 def get_user_events(user_id):
-    """Get all the groups tied to events where a user is"""
+    """Get all the user's events"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
     
     events = []
-    for group in user.groups:
-        if group.events:
-            for event in group.events:
-                events.append({
-                    "id": event.id,
-                    "event_name": event.event_name,
-                    "description": event.description,
-                    "date": event.date.strftime('%Y-%m-%d %H:%M:%S'),
-                    "location": event.location
-                })
+    for event in user.events:
+        event = Event.query.options(joinedload(Event.group)).filter_by(id=event.id).first()
+        event_data = {
+            key: value for key, value in vars(event).items() if not key.startswith('_')
+        }
+        event_data['group'] = {
+            'id': event.group.id, 
+            'group_name': event.group.group_name, 
+            'group_icon': event.group.group_icon
+        }
+        events.append(event_data)
     
     return jsonify({"events": events})
 

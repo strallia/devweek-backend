@@ -1,4 +1,4 @@
-from app import app, db, User, Group, Event, Expense, ExpenseSplit, Notification, DiscussionThread, Message, user_group
+from app import app, db, User, Group, Event, Expense, ExpenseSplit, Notification, DiscussionThread, Message, user_group, user_event
 
 with app.app_context():
     print("Seeding database...")
@@ -91,7 +91,7 @@ with app.app_context():
             category=None,
             id_discussion_thread=None,
             group_id=1,
-            event_name=None
+            event_name="Event 3"
         ),
         Event(
             id=2,
@@ -108,7 +108,7 @@ with app.app_context():
             category="Category1",
             id_discussion_thread=None,
             group_id=1,
-            event_name=None
+            event_name="Hackathon 2025"
         ),
         Event(
             id=4,
@@ -202,7 +202,7 @@ with app.app_context():
     db.session.commit()
 
     # Seed user_group many to many relationship table
-    insert_data = [
+    user_group_data = [
         {'user_id': 3, 'group_id': 1}, 
         {'user_id': 4, 'group_id': 1}, 
         {'user_id': 5, 'group_id': 1},
@@ -211,10 +211,23 @@ with app.app_context():
         {'user_id': 6, 'group_id': 2},
         {'user_id': 5, 'group_id': 2},
     ]
-    for row in insert_data:
+    for row in user_group_data:
         db.session.execute(user_group.insert().values(row))
 
-    # Commit the user-group relationship insertion
+    # Seed user_event many to many relationship table
+    user_event_data = [
+        {'user_id': 3, 'event_id': 3}, 
+        {'user_id': 4, 'event_id': 3}, 
+        {'user_id': 5, 'event_id': 2},
+        {'user_id': 6, 'event_id': 2},
+        {'user_id': 7, 'event_id': 4},
+        {'user_id': 6, 'event_id': 4},
+        {'user_id': 5, 'event_id': 4},
+    ]
+    for row in user_event_data:
+        db.session.execute(user_event.insert().values(row))
+
+    # Commit the many-to-many relationship tables
     db.session.commit()
 
     print("Database seeding complete")
