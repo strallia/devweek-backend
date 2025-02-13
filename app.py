@@ -789,11 +789,11 @@ def send_expense_reminder(expense_id, user_id):
         return jsonify({"error": "Expense not found"}), 404
     
     # Fetch the Owner of the expense
-    owner_id = expense.owner
-    if not owner_id:
+    owner = expense.owner
+    if not owner:
         return jsonify({"error": "Expense has no Owner"}), 404
     
-    sender_id = owner_id  # The ID of the user sending the reminder (in the body)
+    sender_id = owner.id  # The ID of the user sending the reminder (in the body)
 
     # Fetch the user being reminded
     user = User.query.get(user_id)
