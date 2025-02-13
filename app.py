@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timedelta,  timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 load_dotenv()
@@ -17,6 +19,7 @@ CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default_secret_key')
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
@@ -115,8 +118,12 @@ class Expense(db.Model):
     # Foreign Key to Event
     event_id = db.Column(db.Integer, db.ForeignKey('event.id'), nullable=False)
 
-    # Relationship to Event
+    # Foreign Key for Expense Owner (User)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    # Relationships
     event = db.relationship('Event', back_populates='expenses')
+    owner = db.relationship('User', backref='owned_expenses')
 
 # ExpenseSplit Model
 class ExpenseSplit(db.Model):
@@ -124,10 +131,10 @@ class ExpenseSplit(db.Model):
     amount_owed = db.Column(db.Float, nullable=False)
     amount_paid = db.Column(db.Float, default=0)
     algorithm_used = db.Column(db.Enum('equally', 'percentage', 'custom', name='algorithm_type'))
-    
-    # Foreign Keys
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    expense_id = db.Column(db.Integer, db.ForeignKey('expense.id'), nullable=False)
+
+    # Add explicit constraint names
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', name="fk_expensesplit_user"), nullable=False)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expense.id', name="fk_expensesplit_expense"), nullable=False)
 
     # Relationships
     user = db.relationship('User', backref='expense_splits')
@@ -219,6 +226,46 @@ def delete_user(user_id):
         db.session.commit()
         return jsonify({"message": f"User {user.username} deleted successfully!"})
     return jsonify({"error": "User not found"}), 404
+
+@app.route('/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    """Update user information"""
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    old_user_name = user.username
+    data = request.json
+
+    # Update username (if provided)
+    if "username" in data:
+        if User.query.filter_by(username=data["username"]).first():
+            return jsonify({"error": "Username already exists"}), 400
+        user.username = data["username"]
+
+    # Update email (if provided)
+    if "email" in data:
+        if User.query.filter_by(email=data["email"]).first():
+            return jsonify({"error": "Email already in use"}), 400
+        user.email = data["email"]
+
+    # Update password (if provided)
+    if "password" in data:
+        user.password_hash = generate_password_hash(data["password"])
+
+    # Commit changes to the database
+    db.session.commit()
+
+    return jsonify({
+        "message": f"User {old_user_name} updated successfully",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "updated_at": user.updated_at
+        }
+    }), 200
 
 ######################################################################################
 # GROUP ROUTES
@@ -498,20 +545,28 @@ def create_expense(event_id):
         return jsonify({"error": "Event not found"}), 404
 
     data = request.json
+
+    # Fetch the user tied to the expense
+    owner_id = data['owner_id']
+    owner = User.query.get(owner_id)
+    if not owner:
+        return jsonify({"error": f"User to tie to expense not found, ID {owner_id} invalid"}), 404
+
     expense = Expense(
         description=data['description'],
         amount=data['amount'],
         currency=data['currency'],
         amount_paid=data.get('amount_paid', 0),
         amount_remaining=data.get('amount', 0) - data.get('amount_paid', 0),
-        event_id=event.id  # Link expense to event
+        event_id=event.id,  # Link expense to event
+        owner=owner    
     )
 
     db.session.add(expense)
     db.session.commit()
 
     return jsonify({
-        "message": f"Expense created for event {event_id}!",
+        "message": f"Expense created for event {event_id} on user {owner.username}!",
         "expense_id": expense.id
     }), 201
 
@@ -530,6 +585,9 @@ def create_expense_split(expense_id):
 
     # Get the group associated with the event
     group = event.group
+
+    # Get the instance of the owner of the expense
+    owner = expense.owner
 
     data = request.json
     # Get the list of user IDs involved in this expense split
@@ -557,11 +615,20 @@ def create_expense_split(expense_id):
         # Split the remaining amount equally among the users
         split_amount = remaining_amount / len(user_ids)
         for user_id in user_ids:
+            if user_id == owner.id:
+                # The owner of the expense has already paid his own
+                amount_paid = split_amount
+                expense.amount_remaining -= split_amount
+                expense.amount_paid += split_amount
+            
+            else:
+                amount_paid = 0
+
             split = ExpenseSplit(
                 expense_id=expense.id,
                 user_id=user_id,
                 amount_owed=split_amount,
-                amount_paid = 0,
+                amount_paid = amount_paid,
                 algorithm_used=algorithm
             )
             db.session.add(split)
@@ -577,11 +644,21 @@ def create_expense_split(expense_id):
             if percentage < 0 or percentage > 100:
                 return jsonify({"error": f"Invalid percentage {percentage} for user {user_id}"}), 400
             amount_owed = (percentage / total_percentage) * remaining_amount
+
+            if user_id == owner.id:
+                # The owner of the expense has already paid his own
+                amount_paid = amount_owed
+                expense.amount_remaining -= amount_paid
+                expense.amount_paid += amount_paid
+            
+            else:
+                amount_paid = 0
+            
             split = ExpenseSplit(
                 expense_id=expense.id,
                 user_id=user_id,
                 amount_owed=amount_owed,
-                amount_paid = 0,
+                amount_paid = amount_paid,
                 algorithm_used=algorithm
             )
             db.session.add(split)
@@ -595,11 +672,21 @@ def create_expense_split(expense_id):
                 return jsonify({"error": f"User {user_id} is not in the concerned user list"}), 400
             if amount < 0 or amount > remaining_amount:
                 return jsonify({"error": f"Invalid amount {amount} for user {user_id}"}), 400
+            
+            if user_id == owner.id:
+                # The owner of the expense has already paid his own
+                amount_paid = amount
+                expense.amount_remaining -= amount
+                expense.amount_paid += amount
+            
+            else:
+                amount_paid = 0
+
             split = ExpenseSplit(
                 expense_id=expense.id,
                 user_id=user_id,
                 amount_owed=amount,
-                amount_paid = 0,
+                amount_paid = amount_paid,
                 algorithm_used=algorithm
             )
             db.session.add(split)
@@ -622,14 +709,18 @@ def get_expense_split(expense_id):
 
     if not expense:
         return jsonify({"error": "Expense not found"}), 404
-
+    
+    # Fetch the owner of the Expense
+    owner = expense.owner
     splits = ExpenseSplit.query.filter_by(expense_id=expense_id).all()
 
     split_summary = [
         {
             "user_id": split.user_id,
-            "amount_owed": split.amount,
-            "algorithm_used": split.algorithm_used
+            "amount_owed": split.amount_owed,
+            "amount_paid": split.amount_paid,
+            "algorithm_used": split.algorithm_used,
+            "owed_to": owner.username
         }
         for split in splits
     ]
@@ -647,6 +738,9 @@ def get_user_split_for_expense(expense_id, user_id):
 
     if not expense:
         return jsonify({"error": "Expense not found"}), 404
+    
+     # Fetch the owner of the Expense
+    owner = expense.owner
 
     # Find the specific expense split for the user
     split = ExpenseSplit.query.filter_by(expense_id=expense_id, user_id=user_id).first()
@@ -658,7 +752,10 @@ def get_user_split_for_expense(expense_id, user_id):
         "expense_id": expense.id,
         "user_id": user_id,
         "amount_owed": split.amount_owed,
-        "algorithm_used": split.algorithm_used
+        "amount_paid": split.amount_paid,
+        "amount_to_pay": split.amount_owed - split.amount_paid,
+        "algorithm_used": split.algorithm_used,
+        "owed_to": owner.username
     }), 200
 
 @app.route('/expenses/<int:expense_id>/user/<int:user_id>/pay', methods=['POST'])
@@ -674,6 +771,9 @@ def pay_expense(expense_id, user_id):
     expense = Expense.query.get(expense_id)
     if not expense:
         return jsonify({"error": "Expense not found"}), 404
+    
+    # Fetch the owner of the Expense among users
+    owner = expense.owner
 
     # Fetch the expense split record for the user
     split = ExpenseSplit.query.filter_by(expense_id=expense_id, user_id=user_id).first()
@@ -696,12 +796,13 @@ def pay_expense(expense_id, user_id):
     db.session.commit()
 
     return jsonify({
-        "message": "Payment successful",
+        "message": f"Payment successful to {owner.username}",
         "expense_id": expense.id,
         "user_id": user_id,
         "amount_paid": payment_amount,
         "remaining_amount_owed": split.amount_owed,
-        "total_remaining_expense": expense.amount_remaining
+        "total_remaining_expense": expense.amount_remaining,
+        "paying_to": owner.username
     }), 200
 
 
@@ -710,8 +811,81 @@ def get_expense(expense_id):
     """Retrieve an expense by ID"""
     expense = Expense.query.get(expense_id)
     if expense:
-        return jsonify({"id": expense.id, "description": expense.description, "amount_remaining": expense.amount_remaining, "amount_paid":expense.amount_paid})
+        owner = User.query.get(expense.owner.id)
+        return jsonify({"id": expense.id, "description": expense.description,"owner": owner.username , "amount_remaining": expense.amount_remaining, "amount_paid":expense.amount_paid})
     return jsonify({"error": "Expense not found"}), 404
+
+##########################################
+# TWILLIO ROUTES FOR REMINDER EMAIL
+
+@app.route('/send-reminder/expenses/<int:expense_id>/users/<int:user_id>', methods=['POST'])
+def send_expense_reminder(expense_id, user_id):
+    """Send an email reminder to a user about their pending expense to pay."""
+    
+    # Fetch the expense
+    expense = Expense.query.get(expense_id)
+    if not expense:
+        return jsonify({"error": "Expense not found"}), 404
+    
+    # Fetch the Owner of the expense
+    owner = expense.owner
+    if not owner:
+        return jsonify({"error": "Expense has no Owner"}), 404
+    
+    sender_id = owner.id  # The ID of the user sending the reminder (in the body)
+
+    # Fetch the user being reminded
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Fetch the sender (group member who is triggering the reminder)
+    sender = User.query.get(sender_id)
+    if not sender:
+        return jsonify({"error": "Sender not found"}), 404
+
+    # Ensure the sender and recipient are in the same group (linked via the event)
+    group = expense.event.group
+    if sender not in group.users or user not in group.users:
+        return jsonify({"error": "Both sender and recipient must be in the same group"}), 403
+
+    # Fetch the user's split from the ExpenseSplit table
+    expense_split = ExpenseSplit.query.filter_by(expense_id=expense_id, user_id=user_id).first()
+    if not expense_split:
+        return jsonify({"error": "No expense split found for this user"}), 404
+
+    amount_owed = expense_split.amount_owed - expense_split.amount_paid  # Remaining balance
+
+    if amount_owed <= 0:
+        return jsonify({"message": "User has no pending balance."}), 200
+
+    # Email Content
+    subject = "Expense Payment Reminder"
+    content = f"""
+    Hello {user.username},
+
+    {sender.username} is reminding you that you owe ${amount_owed:.2f} for the expense: "{expense.description}".
+
+    Please settle this payment as soon as possible.
+
+    Best regards,  
+    {sender.username}
+    """
+
+    # Send Email via SendGrid
+    message = Mail(
+        from_email=sender.email,  # Sender's email (a group member)
+        to_emails=user.email,  # Recipient's email
+        subject=subject,
+        plain_text_content=content
+    )
+
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        return jsonify({"message": f"Reminder email sent successfully to {user.email}!", "status_code": response.status_code}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to send reminder email to {user.email} - {str(e)}"}), 500
 
 @app.route('/')
 def index():

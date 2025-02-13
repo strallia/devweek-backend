@@ -3,5 +3,6 @@ flask_migrate
 python-dotenv
 psycopg2-binary
 flask-cors
+sendgrid
 flask-jwt-extended
 PyJWT==2.9.0
