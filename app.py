@@ -366,11 +366,18 @@ def get_user_groups(user_id):
     
     groups = []
     for group in user.groups:
-        group = Group.query.options(joinedload(Group.users)).get(group.id)
+        group = db.session.query(Group).options(
+            joinedload(Group.users), 
+            joinedload(Group.events)
+        ).filter(Group.id == group.id).first()
+
         group_data = {
             key: value for key, value in vars(group).items() if not key.startswith('_')
         }
         group_data['users'] = [{'id': user.id, 'username': user.username, 'email': user.email} for user in group.users]
+        group_data['events'] = [{
+            "event_icon": event.event_icon, "event_name": event.event_name, "date": event.date, "location": event.location 
+        } for event in group.events]
         groups.append(group_data)
     
     return jsonify({"groups": groups})
