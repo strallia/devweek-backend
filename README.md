@@ -74,7 +74,7 @@ Make sure you have the following installed:
 
 1. To re-seed the database, remove all tables from the database by running this command in psql CLI
     ```
-    drop table discussion_thread , "event", "expense", "expense_split", "group", "message", "notification", "user", "user_group" cascade;
+    drop table discussion_thread , "event", "expense", "expense_split", "group", "message", "notification", "user", "user_group", "user_event" cascade;
     ```
 1. In separate terminal, run these commands one by one to create the tables and re-seed the database
     ```bash

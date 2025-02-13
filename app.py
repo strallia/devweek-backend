@@ -43,7 +43,7 @@ user_group = db.Table(
 
 # Association table for many-to-many relationship
 user_event = db.Table(
-    'user_events',
+    'user_event',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('event_id', db.Integer, db.ForeignKey('event.id'), primary_key=True)
 )
