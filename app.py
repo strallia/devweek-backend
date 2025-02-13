@@ -916,7 +916,7 @@ def send_expense_reminder(expense_id, user_id):
 
     # Send Email via SendGrid
     message = Mail(
-        from_email=sender.email,  # Sender's email (a group member)
+        from_email="syncup489@gmail.com",  # Sender's email (a group member)
         to_emails=user.email,  # Recipient's email
         subject=subject,
         plain_text_content=content
